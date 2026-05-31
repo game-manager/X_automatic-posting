@@ -161,7 +161,10 @@ def post_to_x(message: str) -> str:
         access_token_secret=access_token_secret,
     )
 
-    response = client.create_tweet(text=message)
+    me = client.get_me(user_auth=True)
+    print("Authenticated user:", me.data)
+
+    response = client.create_tweet(text=message, user_auth=True)
     return response.data.get("id") if response.data else "unknown"
 
 
