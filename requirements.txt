@@ -1,2 +1,2 @@
-tweepy==4.15.0
 google-genai==1.49.0
+requests-oauthlib==2.0.0
