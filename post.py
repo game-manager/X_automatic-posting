@@ -6,8 +6,9 @@ from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
 
-import tweepy
+import requests
 from google import genai
+from requests_oauthlib import OAuth1
 
 
 POSTED_IDEAS_FILE = Path("posted_ideas.txt")
@@ -16,6 +17,7 @@ MAX_TWEET_LENGTH = 280
 MAX_GENERATION_ATTEMPTS = 5
 SIMILARITY_LIMIT = 0.72
 GEMINI_MODEL = "gemini-2.5-flash"
+X_API_BASE_URL = "https://api.x.com/2"
 
 
 def get_required_env(name: str) -> str:
@@ -148,40 +150,51 @@ def save_posted_idea(name: str, feature: str) -> None:
         file.write(line)
 
 
-def print_tweepy_error(error: tweepy.HTTPException) -> None:
-    response = getattr(error, "response", None)
-    print("X API request failed.")
-    if response is not None:
-        print("Status code:", response.status_code)
-        print("Response body:", response.text)
-        print("x-access-level:", response.headers.get("x-access-level"))
-        print("x-rate-limit-remaining:", response.headers.get("x-rate-limit-remaining"))
-    else:
-        print("Error:", error)
-
-
-def post_to_x(message: str) -> str:
+def build_x_auth() -> OAuth1:
     api_key = get_required_env("X_API_KEY")
     api_secret = get_required_env("X_API_SECRET")
     access_token = get_required_env("X_ACCESS_TOKEN")
     access_token_secret = get_required_env("X_ACCESS_TOKEN_SECRET")
 
-    client = tweepy.Client(
-        consumer_key=api_key,
-        consumer_secret=api_secret,
-        access_token=access_token,
-        access_token_secret=access_token_secret,
+    return OAuth1(
+        client_key=api_key,
+        client_secret=api_secret,
+        resource_owner_key=access_token,
+        resource_owner_secret=access_token_secret,
     )
 
-    try:
-        me = client.get_me(user_auth=True)
-        print("Authenticated user:", me.data)
 
-        response = client.create_tweet(text=message, user_auth=True)
-        return response.data.get("id") if response.data else "unknown"
-    except tweepy.HTTPException as error:
-        print_tweepy_error(error)
-        raise
+def raise_for_x_response(response: requests.Response) -> None:
+    if response.ok:
+        return
+
+    print("X API request failed.")
+    print("URL:", response.url)
+    print("Status code:", response.status_code)
+    print("Content-Type:", response.headers.get("content-type"))
+    print("x-access-level:", response.headers.get("x-access-level"))
+    print("x-rate-limit-remaining:", response.headers.get("x-rate-limit-remaining"))
+    print("Response body:", response.text[:2000])
+    response.raise_for_status()
+
+
+def post_to_x(message: str) -> str:
+    auth = build_x_auth()
+
+    me_response = requests.get(f"{X_API_BASE_URL}/users/me", auth=auth, timeout=30)
+    raise_for_x_response(me_response)
+    print("Authenticated user:", me_response.json().get("data"))
+
+    tweet_response = requests.post(
+        f"{X_API_BASE_URL}/tweets",
+        auth=auth,
+        json={"text": message},
+        timeout=30,
+    )
+    raise_for_x_response(tweet_response)
+
+    data = tweet_response.json().get("data", {})
+    return data.get("id", "unknown")
 
 
 def main() -> None:
