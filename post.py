@@ -148,6 +148,18 @@ def save_posted_idea(name: str, feature: str) -> None:
         file.write(line)
 
 
+def print_tweepy_error(error: tweepy.HTTPException) -> None:
+    response = getattr(error, "response", None)
+    print("X API request failed.")
+    if response is not None:
+        print("Status code:", response.status_code)
+        print("Response body:", response.text)
+        print("x-access-level:", response.headers.get("x-access-level"))
+        print("x-rate-limit-remaining:", response.headers.get("x-rate-limit-remaining"))
+    else:
+        print("Error:", error)
+
+
 def post_to_x(message: str) -> str:
     api_key = get_required_env("X_API_KEY")
     api_secret = get_required_env("X_API_SECRET")
@@ -161,11 +173,15 @@ def post_to_x(message: str) -> str:
         access_token_secret=access_token_secret,
     )
 
-    me = client.get_me(user_auth=True)
-    print("Authenticated user:", me.data)
+    try:
+        me = client.get_me(user_auth=True)
+        print("Authenticated user:", me.data)
 
-    response = client.create_tweet(text=message, user_auth=True)
-    return response.data.get("id") if response.data else "unknown"
+        response = client.create_tweet(text=message, user_auth=True)
+        return response.data.get("id") if response.data else "unknown"
+    except tweepy.HTTPException as error:
+        print_tweepy_error(error)
+        raise
 
 
 def main() -> None:
